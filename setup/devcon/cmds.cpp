@@ -41,6 +41,178 @@ struct SetHwidContext {
     int modified;
 };
 
+#define LOG_DEBUG   0
+#define LOG_INFO    1
+#define LOG_WARNING 2
+#define LOG_ERROR   3
+#define LOG_FATAL   4
+#define LOG_NONE    5
+
+int
+cmdPhantoms(__in LPCTSTR BaseName, __in LPCTSTR Machine, __in DWORD Flags, __in int argc, __in_ecount(argc) TCHAR* argv[])
+/*++
+
+Routine description:
+
+    This function removes all the phantom devnodes.
+
+Arguments:
+
+    None.
+
+Return value:
+
+    None.
+
+--*/
+{
+    DWORD Err;
+    HDEVINFO DeviceInfoSet = INVALID_HANDLE_VALUE;
+    SP_DEVINFO_DATA DeviceInfoData;
+    UINT i;
+    DWORD Status, Problem;
+    CONFIGRET cr;
+    WCHAR DeviceInstanceId[MAX_DEVICE_ID_LEN + 1];
+
+    UNREFERENCED_PARAMETER(Flags);
+    UNREFERENCED_PARAMETER(BaseName);
+    UNREFERENCED_PARAMETER(argv);
+
+    if (!argc) {
+        //
+        // arguments required
+        //
+        return EXIT_USAGE;
+    }
+    if (Machine) {
+        //
+        // must be local machine as we need to involve class/co installers
+        //
+        return EXIT_USAGE;
+    }
+
+    FormatToStream(stdout,LOG_INFO, "DEVCON: Removing phantom devices.");
+
+    // Build up a list of all the devices on the system.
+    
+    DeviceInfoSet = SetupDiGetClassDevs(NULL, NULL, NULL, DIGCF_ALLCLASSES);
+    if (INVALID_HANDLE_VALUE == DeviceInfoSet) {
+        Err = GetLastError();
+        FormatToStream(stdout,LOG_ERROR,
+            "DEVCON: Failed to build a list of all devices on the system. Err = 0x%X",
+            Err);
+        goto clean0;
+    }
+
+    // Enumerate the devices one by one.
+
+    i = 0;
+    DeviceInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+    while (SetupDiEnumDeviceInfo(DeviceInfoSet,
+        i++,
+        &DeviceInfoData)) {
+
+        // Check if this device is a phantom.
+        
+        cr = CM_Get_DevNode_Status(&Status, &Problem, DeviceInfoData.DevInst, 0);
+        if ((cr != CR_NO_SUCH_DEVINST) && (cr != CR_NO_SUCH_VALUE)) {
+            // Not a phantom device. Skip it and move on to the next device.
+            continue;
+        }
+
+        // Get the device instance ID of this device.
+        
+        if (!SetupDiGetDeviceInstanceId(DeviceInfoSet,
+            &DeviceInfoData,
+            DeviceInstanceId,
+            ARRAYSIZE(DeviceInstanceId),
+            NULL)) {
+            Err = GetLastError();
+            FormatToStream(stdout, LOG_ERROR,
+                "DEVCON: Failed to get instance ID for a phantom device. Err = 0x%X",
+                Err);
+            continue;
+        }
+
+        FormatToStream(stdout, LOG_INFO,
+            "DEVCON: %ws is a phantom device",
+            DeviceInstanceId);
+
+        // Check to ensure we are not removing a root devnode...
+        
+        if (_wcsicmp(DeviceInstanceId, REGSTR_VAL_ROOT_DEVNODE) == 0) {
+            FormatToStream(stdout, LOG_INFO,
+                "DEVCON: %ws will not be removed because it is the root of the device tree.",
+                DeviceInstanceId);
+            continue;
+        }
+
+        //
+        // or software devices...
+        //
+        if (!_wcsnicmp(DeviceInstanceId, L"SW\\", wcslen(L"SW\\"))) {
+            FormatToStream(stdout, LOG_INFO,
+                "DEVCON: %ws will not be removed because it is a SWENUM device.",
+                DeviceInstanceId);
+            continue;
+        }
+
+        // Or legacy devices...
+
+        if (IsEqualGUID(DeviceInfoData.ClassGuid, GUID_DEVCLASS_LEGACYDRIVER)) {
+            FormatToStream(stdout, LOG_INFO,
+                "DEVCON: %ws will not be removed because it is a legacy device.",
+                DeviceInstanceId);
+            continue;
+        }
+
+        // If substring does not exist, don't remove...
+
+        if (_wcsnicmp(DeviceInstanceId, argv[0], wcslen(argv[0]))) {
+            FormatToStream(stdout, LOG_INFO,
+                "DEVCON: %ws will not be removed because it is not a matching device.",
+                DeviceInstanceId);
+            continue;
+        }
+
+        // Else remove it...
+
+        if (!SetupDiCallClassInstaller(DIF_REMOVE,
+            DeviceInfoSet,
+            &DeviceInfoData)) {
+            Err = GetLastError();
+            FormatToStream(stdout, LOG_WARNING,
+                "DEVCON: Failed to remove device %ws. Err = 0x%X",
+                DeviceInstanceId,
+                Err);
+            continue;
+        }
+
+        FormatToStream(stdout, LOG_INFO,
+            "DEVCON: Removed device %ws.",
+            DeviceInstanceId);
+    }
+
+    Err = GetLastError();
+    if (ERROR_NO_MORE_ITEMS != Err) {
+        FormatToStream(stdout, LOG_ERROR,
+            "DEVCON: Failed to enumerate all devices on the system. Err = 0x%X",
+            Err);
+        goto clean0;
+    }
+
+    Err = ERROR_SUCCESS;
+
+clean0:
+    if (INVALID_HANDLE_VALUE != DeviceInfoSet) {
+        SetupDiDestroyDeviceInfoList(DeviceInfoSet);
+    }
+
+    FormatToStream(stdout, LOG_INFO, "DEVCON: Finished removing phantom devices.");
+
+    return 0;
+}
+
 int cmdHelp(_In_ LPCTSTR BaseName, _In_opt_ LPCTSTR Machine, _In_ DWORD Flags, _In_ int argc, _In_reads_(argc) PTSTR argv[])
 /*++
 
