@@ -23,6 +23,8 @@ Abstract:
 #include <string.h>
 #include <malloc.h>
 #include <newdev.h>
+#include <initguid.h> // added for "phantom" cmd
+#include <devguid.h> // added for "phantom" cmd
 #include <objbase.h>
 #include <strsafe.h>
 #include <io.h>
