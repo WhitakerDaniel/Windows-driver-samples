@@ -776,6 +776,24 @@ MessageId=61132 SymbolicName=MSG_DPENUM_DUMP_SIGNER_UNKNOWN
 Language=English
     Signer: unknown
 .
+;// 
+;// Phantoms
+;//
+MessageId=61198 SymbolicName=MSG_PHANTOM_LONG
+Language=English
+Devcon Phantom Command
+Remove Phantoms with the specified hardware or instance ID.  Valid only on
+the local computer.  (To reboot when necessary, Include -r .)
+%1 [-r] %2 <id> [<id>...]
+%1 [-r] %2 =<class> [<id>...]
+<class>      Specifies a device setup class.
+Examples of <id>:
+ ISAPNP\PNP0501 - Hardware ID (substring) of device instance
+.
+MessageId=61199 SymbolicName=MSG_PHANTOM_SHORT
+Language=English
+%1!-20s! Remove phantoms.
+.
 ;//
 ;// REMOVE
 ;//
